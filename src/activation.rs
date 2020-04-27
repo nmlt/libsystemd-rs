@@ -109,8 +109,7 @@ pub fn receive_descriptors(unset_env: bool) -> Result<Vec<FileDescriptor>> {
         return Err("PID mismatch".into());
     }
 
-    let vec = socks_from_fds(fds);
-    Ok(vec)
+    socks_from_fds(fds)
 }
 
 /// Check for named file descriptors passed by systemd.
@@ -136,23 +135,29 @@ pub fn receive_descriptors_with_names(unset_env: bool) -> Result<Vec<(FileDescri
     }
 
     let names: Vec<String> = names?.split(':').map(String::from).collect();
-    let vec = socks_from_fds(fds);
+    let vec = match socks_from_fds(fds) {
+        Ok(vec) => vec,
+        Err(e) => return Err(e),
+    }; 
     let out = vec.into_iter().zip(names.into_iter()).collect();
 
     Ok(out)
 }
 
-fn socks_from_fds(num_fds: u32) -> Vec<FileDescriptor> {
+fn socks_from_fds(num_fds: u32) -> Result<Vec<FileDescriptor>> {
     let mut vec = Vec::new();
     for fd_offset in 0..num_fds {
         let fd = SD_LISTEN_FDS_START + (fd_offset as i32);
         match FileDescriptor::try_from(fd) {
             Ok(sock) => vec.push(sock),
-            Err(e) => eprintln!("failed to receive socket: {}", e),
+            Err(e) => return Err(format!("failed to receive socket: {}", e).into()),
         };
     }
 
-    vec
+    if vec.len() == 0 {
+        return Err("no sockets were received".into());
+    }
+    Ok(vec)
 }
 
 impl IsType for RawFd {
